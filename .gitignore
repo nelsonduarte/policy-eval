@@ -1,3 +1,5 @@
+vendor/
+
 policy-report-*.md
 policy-report-*.json
 reports/

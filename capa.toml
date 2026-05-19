@@ -1,0 +1,14 @@
+# policy-eval package manifest.
+#
+# Seed libraries consumed via Capa's package manager; run
+# `capa install` to materialise them under ./vendor/.
+
+[package]
+name = "policy-eval"
+version = "0.1.0"
+capa = ">=0.8.4"
+
+[dependencies]
+capa_cli      = { git = "https://github.com/nelsonduarte/capa_cli",      tag = "v0.1" }
+capa_datetime = { git = "https://github.com/nelsonduarte/capa_datetime", tag = "v0.1" }
+capa_log      = { git = "https://github.com/nelsonduarte/capa_log",      tag = "v0.1" }

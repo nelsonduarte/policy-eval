@@ -242,10 +242,12 @@ This is a v0.1 demo. Out of scope:
 - **No PURL-style ecosystem awareness**. The evaluator is
   type-tag agnostic; it doesn't know that `s3_bucket` and
   `S3Bucket` are the same thing.
-- **`Fs.restrict_to("data/")` is a string-prefix check**.
-  Symlinks and `data/../etc/passwd` traversal bypass it; the
-  Capa runtime ticket for proper path canonicalisation
-  tracks this.
+- **TOCTOU race on `Fs.restrict_to`**. The Capa runtime
+  canonicalises paths (via `os.path.realpath`) before
+  comparing, so `data/../etc/passwd` and symlinks pointing
+  outside the prefix are denied. A symlink swap between the
+  `allows()` check and the underlying `open()` is still
+  possible; closing it requires open-at-dirfd semantics.
 
 ## Companion demos
 

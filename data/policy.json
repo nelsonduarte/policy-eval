@@ -1,0 +1,74 @@
+{
+  "name": "default-cloud-baseline",
+  "rules": [
+    {
+      "name": "no-public-s3",
+      "severity": "Critical",
+      "when": {
+        "all_of": [
+          {"path": "type", "equals": "s3_bucket"},
+          {"path": "config.acl", "in": ["public-read", "public-read-write"]}
+        ]
+      },
+      "message": "S3 bucket is publicly accessible (ACL allows public read/write)"
+    },
+    {
+      "name": "s3-encryption-required",
+      "severity": "High",
+      "when": {
+        "all_of": [
+          {"path": "type", "equals": "s3_bucket"},
+          {"path": "config.encryption.enabled", "not_equals": true}
+        ]
+      },
+      "message": "S3 bucket is missing server-side encryption"
+    },
+    {
+      "name": "no-admin-iam",
+      "severity": "Critical",
+      "when": {
+        "all_of": [
+          {"path": "type", "equals": "iam_role"},
+          {"path": "config.policies", "contains": "AdministratorAccess"}
+        ]
+      },
+      "message": "IAM role grants AdministratorAccess (use a scoped policy)"
+    },
+    {
+      "name": "no-default-sg",
+      "severity": "Medium",
+      "when": {
+        "all_of": [
+          {"path": "type", "equals": "ec2_instance"},
+          {"path": "config.security_groups", "contains": "sg-default"}
+        ]
+      },
+      "message": "EC2 instance uses the default security group"
+    },
+    {
+      "name": "no-public-ec2",
+      "severity": "High",
+      "when": {
+        "all_of": [
+          {"path": "type", "equals": "ec2_instance"},
+          {"path": "config.public_ip", "equals": true}
+        ]
+      },
+      "message": "EC2 instance has a public IP (use NAT or a load balancer)"
+    },
+    {
+      "name": "test-not-and-anyof",
+      "severity": "Low",
+      "when": {
+        "any_of": [
+          {"all_of": [
+            {"path": "type", "equals": "rds_instance"},
+            {"not": {"path": "config.encrypted", "equals": true}}
+          ]},
+          {"path": "config.backups", "equals": false}
+        ]
+      },
+      "message": "RDS instance must be encrypted and have backups enabled"
+    }
+  ]
+}

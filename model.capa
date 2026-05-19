@@ -1,0 +1,144 @@
+// model.capa
+//
+// Shared domain types for policy-eval.
+//
+// The headline shape is ``Condition``, a sum type whose AllOf /
+// AnyOf / NotMatch variants carry payloads of type Condition.
+// Self-referential variants let policies nest arbitrarily deep
+// in JSON; the evaluator is then a textbook tree-walk.
+
+// =========================================================
+// Severity (ordered)
+// =========================================================
+
+pub type Severity =
+    Info
+    Low
+    Medium
+    High
+    Critical
+
+pub fun severity_name(s: Severity) -> String
+    return match s
+        Info     -> "Info"
+        Low      -> "Low"
+        Medium   -> "Medium"
+        High     -> "High"
+        Critical -> "Critical"
+
+pub fun severity_rank(s: Severity) -> Int
+    return match s
+        Info     -> 0
+        Low      -> 1
+        Medium   -> 2
+        High     -> 3
+        Critical -> 4
+
+pub fun parse_severity(s: String) -> Severity
+    if s == "Critical" or s == "critical"
+        return Critical
+    if s == "High" or s == "high"
+        return High
+    if s == "Medium" or s == "medium"
+        return Medium
+    if s == "Low" or s == "low"
+        return Low
+    return Info
+
+// =========================================================
+// Condition AST  (the recursive type)
+// =========================================================
+//
+// Leaf nodes test a value at a dotted path; combinator nodes
+// recurse. The evaluator returns Bool: does this Condition
+// match the resource?
+//
+// Capa variants take a single payload, so each leaf type
+// bundles its arguments in a small struct.
+
+pub type PathTest {
+    path: String,
+    value: JsonValue
+}
+
+pub type PathList {
+    path: String,
+    values: List<JsonValue>
+}
+
+pub type PathExist {
+    path: String,
+    expected: Bool
+}
+
+pub type Condition =
+    PathEquals(PathTest)            // path == value
+    PathNotEquals(PathTest)         // path != value
+    PathIn(PathList)                // path in [v1, v2, ...]
+    PathContains(PathTest)          // path is a list containing value
+    PathExists(PathExist)           // path exists (true) or absent (false)
+    AllOf(List<Condition>)          // recursive: AND
+    AnyOf(List<Condition>)          // recursive: OR
+    NotMatch(Condition)             // recursive: NOT
+
+// =========================================================
+// Rule + Finding
+// =========================================================
+
+pub type Rule {
+    name: String,
+    severity: Severity,
+    condition: Condition,
+    message: String
+}
+
+pub type Policy {
+    name: String,
+    rules: List<Rule>
+}
+
+pub type Finding {
+    rule_name: String,
+    resource_type: String,
+    resource_name: String,
+    severity: Severity,
+    message: String
+}
+
+// =========================================================
+// Resources (subject)
+// =========================================================
+//
+// Each resource keeps its original JSON envelope so the
+// evaluator can drill into arbitrary paths without us
+// committing to a fixed shape.
+
+pub type Resource {
+    res_type: String,
+    res_name: String,
+    raw: JsonValue          // the whole {"type","name","config":...} object
+}
+
+pub type Subject {
+    environment: String,
+    snapshot_at: String,
+    resources: List<Resource>
+}
+
+// =========================================================
+// Errors + Options
+// =========================================================
+
+pub type EvalError =
+    JsonError(String)
+    IoFailed(String)
+    BadArgs(String)
+    BadPolicy(String)
+
+pub type Options {
+    policy_path: String,
+    subject_path: String,
+    output_dir: String,
+    fail_threshold: Severity,
+    verbose: Bool
+}

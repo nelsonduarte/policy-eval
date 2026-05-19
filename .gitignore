@@ -1,0 +1,15 @@
+policy-report-*.md
+policy-report-*.json
+reports/
+
+_manifest.json
+manifest.json
+
+_*.py
+
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+*.swp

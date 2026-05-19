@@ -1,0 +1,119 @@
+// render.capa
+//
+// Two output formats: markdown report (human) + JSON summary
+// (CI). Both pure functions; the caller writes them through a
+// write-only attenuated Fs.
+
+import model
+import evaluator
+
+// =========================================================
+// Markdown
+// =========================================================
+
+pub fun render_markdown(
+    policy_path: String,
+    subject_path: String,
+    generated_at: String,
+    policy: Policy,
+    subject: Subject,
+    findings: List<Finding>,
+    fail_threshold: Severity
+) -> String
+    let summary = summarise(findings)
+    var out = "# Policy Evaluation Report\n\n"
+    out = out + "- **Policy:** ${policy.name} (${policy_path})\n"
+    out = out + "- **Subject:** ${subject_path}\n"
+    out = out + "- **Environment:** ${subject.environment}\n"
+    out = out + "- **Snapshot at:** ${subject.snapshot_at}\n"
+    out = out + "- **Generated:** ${generated_at}\n"
+    out = out + "- **Rules:** ${policy.rules.length()}\n"
+    out = out + "- **Resources:** ${subject.resources.length()}\n"
+    out = out + "- **Fail threshold:** ${severity_name(fail_threshold)}\n\n"
+
+    out = out + "## Summary\n\n"
+    out = out + "| Severity | Count |\n"
+    out = out + "|----------|-------|\n"
+    out = out + "| Critical | ${summary.critical} |\n"
+    out = out + "| High     | ${summary.high} |\n"
+    out = out + "| Medium   | ${summary.medium} |\n"
+    out = out + "| Low      | ${summary.low} |\n"
+    out = out + "| Info     | ${summary.info} |\n\n"
+
+    if findings.is_empty()
+        out = out + "_All resources passed every rule._\n"
+        return out
+
+    out = out + section("Critical", Critical, findings)
+    out = out + section("High", High, findings)
+    out = out + section("Medium", Medium, findings)
+    out = out + section("Low", Low, findings)
+    out = out + section("Info", Info, findings)
+    return out
+
+fun section(title: String, level: Severity, findings: List<Finding>) -> String
+    var any = false
+    for f in findings
+        if severity_rank(f.severity) == severity_rank(level)
+            any = true
+            break
+    if not any
+        return ""
+    var out = "## ${title}\n\n"
+    for f in findings
+        if severity_rank(f.severity) != severity_rank(level)
+            continue
+        out = out + "- **[${f.rule_name}]** `${f.resource_type}/${f.resource_name}`: ${f.message}\n"
+    out = out + "\n"
+    return out
+
+// =========================================================
+// JSON
+// =========================================================
+
+pub fun render_json(
+    policy_path: String,
+    subject_path: String,
+    generated_at: String,
+    policy: Policy,
+    subject: Subject,
+    findings: List<Finding>,
+    fail_threshold: Severity
+) -> String
+    let summary = summarise(findings)
+    var root: Map<String, JsonValue> = new_map()
+    root.set("policy_path", JStr(policy_path))
+    root.set("policy_name", JStr(policy.name))
+    root.set("subject_path", JStr(subject_path))
+    root.set("environment", JStr(subject.environment))
+    root.set("snapshot_at", JStr(subject.snapshot_at))
+    root.set("generated_at", JStr(generated_at))
+    root.set("rules_evaluated", JNum(to_float(policy.rules.length())))
+    root.set("resources_scanned", JNum(to_float(subject.resources.length())))
+    root.set("fail_threshold", JStr(severity_name(fail_threshold)))
+
+    var counts: Map<String, JsonValue> = new_map()
+    counts.set("critical", JNum(to_float(summary.critical)))
+    counts.set("high", JNum(to_float(summary.high)))
+    counts.set("medium", JNum(to_float(summary.medium)))
+    counts.set("low", JNum(to_float(summary.low)))
+    counts.set("info", JNum(to_float(summary.info)))
+    root.set("summary", JObj(counts))
+
+    var arr: List<JsonValue> = []
+    for f in findings
+        var row: Map<String, JsonValue> = new_map()
+        row.set("rule", JStr(f.rule_name))
+        row.set("resource_type", JStr(f.resource_type))
+        row.set("resource_name", JStr(f.resource_name))
+        row.set("severity", JStr(severity_name(f.severity)))
+        row.set("message", JStr(f.message))
+        arr.push(JObj(row))
+    root.set("findings", JArr(arr))
+    root.set("failing", JBool(has_failing(findings, fail_threshold)))
+    return to_json(JObj(root))
+
+pub fun write_text(fs: Fs, path: String, body: String) -> Result<Unit, EvalError>
+    match fs.write(path, body)
+        Ok(_)  -> return Ok(())
+        Err(_) -> return Err(IoFailed("cannot write '${path}'"))

@@ -1,0 +1,68 @@
+{
+  "environment": "production",
+  "snapshot_at": "2026-05-19T08:00:00Z",
+  "resources": [
+    {
+      "type": "s3_bucket",
+      "name": "data-lake",
+      "config": {
+        "acl": "private",
+        "encryption": {"enabled": true, "kms_key": "alias/data-lake"}
+      }
+    },
+    {
+      "type": "s3_bucket",
+      "name": "public-assets",
+      "config": {
+        "acl": "public-read",
+        "encryption": {"enabled": false}
+      }
+    },
+    {
+      "type": "s3_bucket",
+      "name": "logs-archive",
+      "config": {
+        "acl": "private",
+        "encryption": {"enabled": false}
+      }
+    },
+    {
+      "type": "iam_role",
+      "name": "ci-deploy",
+      "config": {
+        "policies": ["AdministratorAccess", "AmazonS3FullAccess"]
+      }
+    },
+    {
+      "type": "iam_role",
+      "name": "developer",
+      "config": {
+        "policies": ["ReadOnlyAccess"]
+      }
+    },
+    {
+      "type": "ec2_instance",
+      "name": "web-01",
+      "config": {
+        "public_ip": true,
+        "security_groups": ["sg-default", "sg-web"]
+      }
+    },
+    {
+      "type": "ec2_instance",
+      "name": "internal-api",
+      "config": {
+        "public_ip": false,
+        "security_groups": ["sg-api"]
+      }
+    },
+    {
+      "type": "rds_instance",
+      "name": "billing-db",
+      "config": {
+        "encrypted": false,
+        "backups": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,179 @@
+// parse.capa
+//
+// JSON readers for policy + subject. The parser for Condition
+// is *recursive* (matches the recursive AST in model.capa).
+// Declares [Fs] for the reads; tree construction is pure.
+
+import model
+
+// =========================================================
+// Generic helpers
+// =========================================================
+
+fun read_json(fs: Fs, path: String) -> Result<JsonValue, EvalError>
+    let body = match fs.read(path)
+        Ok(s)  -> s
+        Err(_) -> return Err(IoFailed("cannot read '${path}'"))
+    match parse_json(body)
+        Ok(v)  -> return Ok(v)
+        Err(e) -> return Err(JsonError("'${path}': ${e}"))
+
+fun expect_object(jv: JsonValue, what: String) -> Result<Map<String, JsonValue>, EvalError>
+    match jv.as_object()
+        Some(m) -> return Ok(m)
+        None    -> return Err(BadPolicy("expected object for '${what}'"))
+
+fun get_string(obj: Map<String, JsonValue>, key: String) -> String
+    match obj.get(key)
+        None     -> return ""
+        Some(jv) ->
+            match jv.as_string()
+                Some(s) -> return s
+                None    -> return ""
+
+fun get_array(obj: Map<String, JsonValue>, key: String) -> List<JsonValue>
+    match obj.get(key)
+        None     -> return []
+        Some(jv) ->
+            match jv.as_array()
+                Some(a) -> return a
+                None    -> return []
+
+fun get_bool(obj: Map<String, JsonValue>, key: String) -> Bool
+    match obj.get(key)
+        None     -> return false
+        Some(jv) ->
+            match jv.as_bool()
+                Some(b) -> return b
+                None    -> return false
+
+// =========================================================
+// Condition parser  (recursive!)
+// =========================================================
+//
+// Dispatches on the keys present in the object. Order matters
+// for combinators because a malformed leaf with an "all_of"
+// key would mis-dispatch; the combinator keys are checked
+// first.
+
+pub fun parse_condition(jv: JsonValue) -> Result<Condition, EvalError>
+    let obj = match jv.as_object()
+        Some(o) -> o
+        None    -> return Err(BadPolicy("condition must be a JSON object"))
+
+    // Combinator dispatch first.
+    if obj.contains_key("all_of")
+        let subs = parse_condition_list(obj, "all_of")?
+        return Ok(AllOf(subs))
+    if obj.contains_key("any_of")
+        let subs = parse_condition_list(obj, "any_of")?
+        return Ok(AnyOf(subs))
+    if obj.contains_key("not")
+        let inner_jv = match obj.get("not")
+            Some(v) -> v
+            None    -> return Err(BadPolicy("'not' present but no value"))
+        let inner = parse_condition(inner_jv)?      // RECURSION
+        return Ok(NotMatch(inner))
+
+    // Leaf: every leaf requires a "path" key.
+    if not obj.contains_key("path")
+        return Err(BadPolicy("leaf condition must have a 'path' key"))
+    let path = get_string(obj, "path")
+
+    if obj.contains_key("equals")
+        let value = match obj.get("equals")
+            Some(v) -> v
+            None    -> return Err(BadPolicy("'equals' value missing"))
+        return Ok(PathEquals(PathTest { path: path, value: value }))
+    if obj.contains_key("not_equals")
+        let value = match obj.get("not_equals")
+            Some(v) -> v
+            None    -> return Err(BadPolicy("'not_equals' value missing"))
+        return Ok(PathNotEquals(PathTest { path: path, value: value }))
+    if obj.contains_key("in")
+        let in_jv = match obj.get("in")
+            Some(v) -> v
+            None    -> return Err(BadPolicy("'in' value missing"))
+        let values = match in_jv.as_array()
+            Some(arr) -> arr
+            None      -> return Err(BadPolicy("'in' must be an array"))
+        return Ok(PathIn(PathList { path: path, values: values }))
+    if obj.contains_key("contains")
+        let value = match obj.get("contains")
+            Some(v) -> v
+            None    -> return Err(BadPolicy("'contains' value missing"))
+        return Ok(PathContains(PathTest { path: path, value: value }))
+    if obj.contains_key("exists")
+        let expected = get_bool(obj, "exists")
+        return Ok(PathExists(PathExist { path: path, expected: expected }))
+
+    return Err(BadPolicy("condition at path '${path}' has no recognised operator"))
+
+fun parse_condition_list(obj: Map<String, JsonValue>, key: String) -> Result<List<Condition>, EvalError>
+    let jv = match obj.get(key)
+        Some(v) -> v
+        None    -> return Err(BadPolicy("'${key}' missing"))
+    let arr = match jv.as_array()
+        Some(a) -> a
+        None    -> return Err(BadPolicy("'${key}' must be an array"))
+    var out: List<Condition> = []
+    for sub_jv in arr
+        out.push(parse_condition(sub_jv)?)          // RECURSION
+    return Ok(out)
+
+// =========================================================
+// Rule + Policy
+// =========================================================
+
+fun parse_rule(jv: JsonValue) -> Result<Rule, EvalError>
+    let obj = match jv.as_object()
+        Some(o) -> o
+        None    -> return Err(BadPolicy("rule must be a JSON object"))
+    let name = get_string(obj, "name")
+    let sev = parse_severity(get_string(obj, "severity"))
+    let msg = get_string(obj, "message")
+    let when_jv = match obj.get("when")
+        Some(v) -> v
+        None    -> return Err(BadPolicy("rule '${name}' is missing 'when'"))
+    let cond = parse_condition(when_jv)?
+    return Ok(Rule {
+        name: name, severity: sev, condition: cond, message: msg
+    })
+
+pub fun parse_policy(fs: Fs, path: String) -> Result<Policy, EvalError>
+    let root = read_json(fs, path)?
+    let obj = expect_object(root, "policy root")?
+    let name = get_string(obj, "name")
+    var rules: List<Rule> = []
+    for rule_jv in get_array(obj, "rules")
+        rules.push(parse_rule(rule_jv)?)
+    return Ok(Policy { name: name, rules: rules })
+
+// =========================================================
+// Subject
+// =========================================================
+//
+// We keep the raw JsonValue for each resource so the
+// evaluator can drill into arbitrary paths without us having
+// to commit to a fixed schema.
+
+pub fun parse_subject(fs: Fs, path: String) -> Result<Subject, EvalError>
+    let root = read_json(fs, path)?
+    let obj = expect_object(root, "subject root")?
+    let env = get_string(obj, "environment")
+    let snap = get_string(obj, "snapshot_at")
+    var resources: List<Resource> = []
+    for r_jv in get_array(obj, "resources")
+        let r_obj = match r_jv.as_object()
+            Some(m) -> m
+            None    -> return Err(BadPolicy("resource entry must be an object"))
+        resources.push(Resource {
+            res_type: get_string(r_obj, "type"),
+            res_name: get_string(r_obj, "name"),
+            raw: r_jv
+        })
+    return Ok(Subject {
+        environment: env,
+        snapshot_at: snap,
+        resources: resources
+    })

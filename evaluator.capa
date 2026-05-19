@@ -1,0 +1,186 @@
+// evaluator.capa
+//
+// Pure tree-walk over the Condition AST. The match on Condition
+// dispatches to a small helper per variant; NotMatch / AllOf /
+// AnyOf recurse back through ``eval_condition``. No I/O, no
+// clock, no logging.
+
+import model
+
+// =========================================================
+// Top-level eval
+// =========================================================
+//
+// Returns true when ``raw`` (a single resource's JsonValue
+// envelope) satisfies the condition. The Condition variants
+// dispatch to per-shape helpers so each match arm stays a
+// single expression.
+
+pub fun eval_condition(c: Condition, raw: JsonValue) -> Bool
+    match c
+        PathEquals(t)    -> return eval_path_equals(t, raw)
+        PathNotEquals(t) -> return eval_path_not_equals(t, raw)
+        PathIn(pl)       -> return eval_path_in(pl, raw)
+        PathContains(t)  -> return eval_path_contains(t, raw)
+        PathExists(pe)   -> return eval_path_exists(pe, raw)
+        AllOf(subs)      -> return eval_all_of(subs, raw)
+        AnyOf(subs)      -> return eval_any_of(subs, raw)
+        NotMatch(inner)  -> return not eval_condition(inner, raw)
+    return false
+
+fun eval_path_equals(t: PathTest, raw: JsonValue) -> Bool
+    match lookup_path(raw, t.path)
+        None    -> return false
+        Some(v) -> return json_equals(v, t.value)
+
+fun eval_path_not_equals(t: PathTest, raw: JsonValue) -> Bool
+    // Absent path is considered "not equal".
+    match lookup_path(raw, t.path)
+        None    -> return true
+        Some(v) -> return not json_equals(v, t.value)
+
+fun eval_path_in(pl: PathList, raw: JsonValue) -> Bool
+    let v = match lookup_path(raw, pl.path)
+        Some(x) -> x
+        None    -> return false
+    for candidate in pl.values
+        if json_equals(v, candidate)
+            return true
+    return false
+
+fun eval_path_contains(t: PathTest, raw: JsonValue) -> Bool
+    let v = match lookup_path(raw, t.path)
+        Some(x) -> x
+        None    -> return false
+    let arr = match v.as_array()
+        Some(a) -> a
+        None    -> return false
+    for elt in arr
+        if json_equals(elt, t.value)
+            return true
+    return false
+
+fun eval_path_exists(pe: PathExist, raw: JsonValue) -> Bool
+    match lookup_path(raw, pe.path)
+        Some(_) -> return pe.expected
+        None    -> return not pe.expected
+
+fun eval_all_of(subs: List<Condition>, raw: JsonValue) -> Bool
+    for c in subs
+        if not eval_condition(c, raw)
+            return false
+    return true
+
+fun eval_any_of(subs: List<Condition>, raw: JsonValue) -> Bool
+    for c in subs
+        if eval_condition(c, raw)
+            return true
+    return false
+
+// =========================================================
+// Path lookup
+// =========================================================
+//
+// Splits "config.encryption.enabled" into three segments and
+// drills into nested JSON objects. Any missing segment or
+// non-object value along the way returns None.
+
+pub fun lookup_path(jv: JsonValue, path: String) -> Option<JsonValue>
+    var current = jv
+    for segment in path.split(".")
+        let obj = match current.as_object()
+            Some(o) -> o
+            None    -> return None
+        let next = match obj.get(segment)
+            Some(v) -> v
+            None    -> return None
+        current = next
+    return Some(current)
+
+// =========================================================
+// JSON equality
+// =========================================================
+//
+// Leaf equality only: Bool vs Bool, Num vs Num, Str vs Str,
+// Null vs Null. Nested arrays / objects are out of scope
+// for v1 (the policies in scope only ever compare leaves).
+
+pub fun json_equals(a: JsonValue, b: JsonValue) -> Bool
+    // Bool
+    let ab_opt = a.as_bool()
+    let bb_opt = b.as_bool()
+    if ab_opt.is_some() and bb_opt.is_some()
+        let ab = ab_opt.unwrap_or(false)
+        let bb = bb_opt.unwrap_or(false)
+        return ab == bb
+    // Num
+    let an_opt = a.as_num()
+    let bn_opt = b.as_num()
+    if an_opt.is_some() and bn_opt.is_some()
+        let an = an_opt.unwrap_or(0.0)
+        let bn = bn_opt.unwrap_or(0.0)
+        return an == bn
+    // Str
+    let as_opt = a.as_string()
+    let bs_opt = b.as_string()
+    if as_opt.is_some() and bs_opt.is_some()
+        let as_val = as_opt.unwrap_or("")
+        let bs_val = bs_opt.unwrap_or("")
+        return as_val == bs_val
+    // Null vs Null
+    if a.is_null() and b.is_null()
+        return true
+    return false
+
+// =========================================================
+// Drive the engine across all (rule, resource) pairs
+// =========================================================
+
+pub fun run_policy(policy: Policy, subject: Subject) -> List<Finding>
+    var out: List<Finding> = []
+    for r in subject.resources
+        for rule in policy.rules
+            if eval_condition(rule.condition, r.raw)
+                out.push(Finding {
+                    rule_name: rule.name,
+                    resource_type: r.res_type,
+                    resource_name: r.res_name,
+                    severity: rule.severity,
+                    message: rule.message
+                })
+    return out
+
+// =========================================================
+// Summary + threshold
+// =========================================================
+
+pub type SeveritySummary {
+    critical: Int,
+    high: Int,
+    medium: Int,
+    low: Int,
+    info: Int
+}
+
+pub fun summarise(findings: List<Finding>) -> SeveritySummary
+    var c = 0
+    var h = 0
+    var m = 0
+    var l = 0
+    var i = 0
+    for f in findings
+        match f.severity
+            Critical -> c = c + 1
+            High     -> h = h + 1
+            Medium   -> m = m + 1
+            Low      -> l = l + 1
+            Info     -> i = i + 1
+    return SeveritySummary {
+        critical: c, high: h, medium: m, low: l, info: i
+    }
+
+pub fun has_failing(findings: List<Finding>, threshold: Severity) -> Bool
+    for f in findings
+        if severity_rank(f.severity) >= severity_rank(threshold)
+            return true
+    return false

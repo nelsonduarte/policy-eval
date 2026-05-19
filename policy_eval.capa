@@ -1,0 +1,190 @@
+// policy_eval.capa
+//
+// policy-eval entry point. Takes a policy file + a subject
+// file, evaluates every rule against every resource via a
+// recursive tree-walk of the Condition AST, and writes a
+// markdown + JSON report.
+//
+// Audit summary (capa --manifest policy_eval.capa):
+//   main:           [Stdio, Fs, Env, Clock]
+//   run:            [Logger, Fs, Fs]    (attenuated read + write)
+//   parse_*:        [Fs]
+//   write_text:     [Fs]
+//   eval_*,
+//   lookup_path,
+//   run_policy,
+//   render_*:       pure
+
+import model
+import parse
+import evaluator
+import render
+
+import capa_cli.parser
+import capa_datetime.datetime
+import capa_log.log
+import capa_log.stdio_logger
+
+// =========================================================
+// CLI
+// =========================================================
+
+fun build_schema() -> ArgSchema
+    var positionals: List<Positional> = []
+    positionals.push(Positional {
+        name: "subject",
+        help: "path to a subject JSON document (must live under data/)"
+    })
+    var flags: List<Flag> = []
+    flags.push(Flag {
+        long: "verbose", short: "v",
+        help: "enable DEBUG-level logging"
+    })
+    var opts: List<Opt> = []
+    opts.push(Opt {
+        long: "policy", short: "p",
+        help: "path to the policy JSON (default: data/policy.json)",
+        required: false
+    })
+    opts.push(Opt {
+        long: "output-dir", short: "o",
+        help: "directory for report files (default: cwd)",
+        required: false
+    })
+    opts.push(Opt {
+        long: "fail-threshold", short: "f",
+        help: "exit non-zero when any finding >= this severity (default: High)",
+        required: false
+    })
+    return ArgSchema {
+        program: "policy-eval",
+        summary: "evaluate a JSON-encoded policy AST against a subject document; emit a verdict report",
+        positionals: positionals,
+        flags: flags,
+        options: opts
+    }
+
+fun resolve_options(parsed: ParsedArgs) -> Result<Options, EvalError>
+    let subject = match parsed.positionals.get("subject")
+        Some(s) -> s
+        None    -> return Err(BadArgs("missing subject path"))
+    let policy = match parsed.options.get("policy")
+        Some(s) -> s
+        None    -> "data/policy.json"
+    let out_dir = match parsed.options.get("output-dir")
+        Some(s) -> s
+        None    -> "."
+    let raw_threshold = match parsed.options.get("fail-threshold")
+        Some(s) -> s
+        None    -> "High"
+    let threshold = parse_severity(raw_threshold)
+    let verbose = match parsed.flags.get("verbose")
+        Some(b) -> b
+        None    -> false
+    return Ok(Options {
+        policy_path: policy,
+        subject_path: subject,
+        output_dir: out_dir,
+        fail_threshold: threshold,
+        verbose: verbose
+    })
+
+// =========================================================
+// Pipeline
+// =========================================================
+
+fun run(
+    log: Logger,
+    read_fs: Fs,
+    write_fs: Fs,
+    opts: Options,
+    generated_at: String
+) -> Result<Bool, EvalError>
+    log.info("loading policy ${opts.policy_path}")
+    let policy = parse_policy(read_fs, opts.policy_path)?
+    log.info("policy '${policy.name}': ${policy.rules.length()} rule(s)")
+
+    log.info("loading subject ${opts.subject_path}")
+    let subject = parse_subject(read_fs, opts.subject_path)?
+    log.info("subject '${subject.environment}': ${subject.resources.length()} resource(s)")
+
+    let findings = run_policy(policy, subject)
+    for f in findings
+        log.warn("[${f.rule_name}] ${f.resource_type}/${f.resource_name} ${severity_name(f.severity)}: ${f.message}")
+
+    let summary = summarise(findings)
+    log.info("findings: ${summary.critical} critical, ${summary.high} high, ${summary.medium} medium, ${summary.low} low, ${summary.info} info")
+
+    let md_path = "${opts.output_dir}/policy-report-${generated_at}.md"
+    let json_path = "${opts.output_dir}/policy-report-${generated_at}.json"
+
+    write_text(write_fs, md_path,
+        render_markdown(
+            opts.policy_path, opts.subject_path, generated_at,
+            policy, subject, findings, opts.fail_threshold
+        ))?
+    log.info("wrote ${md_path}")
+
+    write_text(write_fs, json_path,
+        render_json(
+            opts.policy_path, opts.subject_path, generated_at,
+            policy, subject, findings, opts.fail_threshold
+        ))?
+    log.info("wrote ${json_path}")
+
+    let failing = has_failing(findings, opts.fail_threshold)
+    if failing
+        log.warn("policy gate FAILED: at least one finding >= ${severity_name(opts.fail_threshold)}")
+    else
+        log.info("policy gate passed: nothing >= ${severity_name(opts.fail_threshold)}")
+    return Ok(failing)
+
+fun describe_error(stdio: Stdio, err: EvalError) -> Unit
+    match err
+        JsonError(msg)  -> stdio.eprintln("json error: ${msg}")
+        IoFailed(msg)   -> stdio.eprintln("io error: ${msg}")
+        BadArgs(msg)    -> stdio.eprintln("argument error: ${msg}")
+        BadPolicy(msg)  -> stdio.eprintln("policy error: ${msg}")
+
+fun main(stdio: Stdio, fs: Fs, env: Env, clock: Clock)
+    let schema = build_schema()
+    let raw_args = env.args()
+    let parsed = match parse(schema, raw_args)
+        Ok(p) -> p
+        Err(HelpRequested) ->
+            stdio.println(format_help(schema))
+            return ()
+        Err(Missing(name)) ->
+            stdio.eprintln("error: missing required argument '${name}'")
+            stdio.eprintln("")
+            stdio.eprintln(format_help(schema))
+            return ()
+        Err(Unknown(arg)) ->
+            stdio.eprintln("error: unrecognised argument '${arg}'")
+            return ()
+        Err(NeedsValue(name)) ->
+            stdio.eprintln("error: option '${name}' needs a value")
+            return ()
+
+    let opts = match resolve_options(parsed)
+        Ok(o)  -> o
+        Err(e) ->
+            describe_error(stdio, e)
+            return ()
+
+    let min_level = match opts.verbose
+        true  -> DEBUG
+        false -> INFO
+    let log = make_stdio_logger(stdio, min_level)
+
+    let read_fs = fs.restrict_to("data/")
+    let write_fs = fs.restrict_to(opts.output_dir)
+    let generated_at = format_date(clock.now_secs())
+
+    match run(log, read_fs, write_fs, opts, generated_at)
+        Ok(failing) ->
+            if failing
+                stdio.eprintln("policy-eval: FAILING")
+            else
+                stdio.println("policy-eval: success")
+        Err(e) -> describe_error(stdio, e)

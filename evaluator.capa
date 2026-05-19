@@ -18,52 +18,52 @@ import model
 
 pub fun eval_condition(c: Condition, raw: JsonValue) -> Bool
     match c
-        PathEquals(t)    -> return eval_path_equals(t, raw)
-        PathNotEquals(t) -> return eval_path_not_equals(t, raw)
-        PathIn(pl)       -> return eval_path_in(pl, raw)
-        PathContains(t)  -> return eval_path_contains(t, raw)
-        PathExists(pe)   -> return eval_path_exists(pe, raw)
-        AllOf(subs)      -> return eval_all_of(subs, raw)
-        AnyOf(subs)      -> return eval_any_of(subs, raw)
-        NotMatch(inner)  -> return not eval_condition(inner, raw)
+        PathEquals(path, value)    -> return eval_path_equals(path, value, raw)
+        PathNotEquals(path, value) -> return eval_path_not_equals(path, value, raw)
+        PathIn(path, values)       -> return eval_path_in(path, values, raw)
+        PathContains(path, value)  -> return eval_path_contains(path, value, raw)
+        PathExists(path, expected) -> return eval_path_exists(path, expected, raw)
+        AllOf(subs)                -> return eval_all_of(subs, raw)
+        AnyOf(subs)                -> return eval_any_of(subs, raw)
+        NotMatch(inner)            -> return not eval_condition(inner, raw)
     return false
 
-fun eval_path_equals(t: PathTest, raw: JsonValue) -> Bool
-    match lookup_path(raw, t.path)
+fun eval_path_equals(path: String, value: JsonValue, raw: JsonValue) -> Bool
+    match lookup_path(raw, path)
         None    -> return false
-        Some(v) -> return json_equals(v, t.value)
+        Some(v) -> return json_equals(v, value)
 
-fun eval_path_not_equals(t: PathTest, raw: JsonValue) -> Bool
+fun eval_path_not_equals(path: String, value: JsonValue, raw: JsonValue) -> Bool
     // Absent path is considered "not equal".
-    match lookup_path(raw, t.path)
+    match lookup_path(raw, path)
         None    -> return true
-        Some(v) -> return not json_equals(v, t.value)
+        Some(v) -> return not json_equals(v, value)
 
-fun eval_path_in(pl: PathList, raw: JsonValue) -> Bool
-    let v = match lookup_path(raw, pl.path)
+fun eval_path_in(path: String, values: List<JsonValue>, raw: JsonValue) -> Bool
+    let v = match lookup_path(raw, path)
         Some(x) -> x
         None    -> return false
-    for candidate in pl.values
+    for candidate in values
         if json_equals(v, candidate)
             return true
     return false
 
-fun eval_path_contains(t: PathTest, raw: JsonValue) -> Bool
-    let v = match lookup_path(raw, t.path)
+fun eval_path_contains(path: String, value: JsonValue, raw: JsonValue) -> Bool
+    let v = match lookup_path(raw, path)
         Some(x) -> x
         None    -> return false
     let arr = match v.as_array()
         Some(a) -> a
         None    -> return false
     for elt in arr
-        if json_equals(elt, t.value)
+        if json_equals(elt, value)
             return true
     return false
 
-fun eval_path_exists(pe: PathExist, raw: JsonValue) -> Bool
-    match lookup_path(raw, pe.path)
-        Some(_) -> return pe.expected
-        None    -> return not pe.expected
+fun eval_path_exists(path: String, expected: Bool, raw: JsonValue) -> Bool
+    match lookup_path(raw, path)
+        Some(_) -> return expected
+        None    -> return not expected
 
 fun eval_all_of(subs: List<Condition>, raw: JsonValue) -> Bool
     for c in subs

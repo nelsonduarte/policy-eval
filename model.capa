@@ -52,34 +52,16 @@ pub fun parse_severity(s: String) -> Severity
 // Leaf nodes test a value at a dotted path; combinator nodes
 // recurse. The evaluator returns Bool: does this Condition
 // match the resource?
-//
-// Capa variants take a single payload, so each leaf type
-// bundles its arguments in a small struct.
-
-pub type PathTest {
-    path: String,
-    value: JsonValue
-}
-
-pub type PathList {
-    path: String,
-    values: List<JsonValue>
-}
-
-pub type PathExist {
-    path: String,
-    expected: Bool
-}
 
 pub type Condition =
-    PathEquals(PathTest)            // path == value
-    PathNotEquals(PathTest)         // path != value
-    PathIn(PathList)                // path in [v1, v2, ...]
-    PathContains(PathTest)          // path is a list containing value
-    PathExists(PathExist)           // path exists (true) or absent (false)
-    AllOf(List<Condition>)          // recursive: AND
-    AnyOf(List<Condition>)          // recursive: OR
-    NotMatch(Condition)             // recursive: NOT
+    PathEquals(String, JsonValue)             // path == value
+    PathNotEquals(String, JsonValue)          // path != value
+    PathIn(String, List<JsonValue>)           // path in [v1, v2, ...]
+    PathContains(String, JsonValue)           // path is a list containing value
+    PathExists(String, Bool)                  // path exists (true) or absent (false)
+    AllOf(List<Condition>)                    // recursive: AND
+    AnyOf(List<Condition>)                    // recursive: OR
+    NotMatch(Condition)                       // recursive: NOT
 
 // =========================================================
 // Rule + Finding

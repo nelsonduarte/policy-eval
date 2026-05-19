@@ -84,12 +84,12 @@ pub fun parse_condition(jv: JsonValue) -> Result<Condition, EvalError>
         let value = match obj.get("equals")
             Some(v) -> v
             None    -> return Err(BadPolicy("'equals' value missing"))
-        return Ok(PathEquals(PathTest { path: path, value: value }))
+        return Ok(PathEquals(path, value))
     if obj.contains_key("not_equals")
         let value = match obj.get("not_equals")
             Some(v) -> v
             None    -> return Err(BadPolicy("'not_equals' value missing"))
-        return Ok(PathNotEquals(PathTest { path: path, value: value }))
+        return Ok(PathNotEquals(path, value))
     if obj.contains_key("in")
         let in_jv = match obj.get("in")
             Some(v) -> v
@@ -97,15 +97,15 @@ pub fun parse_condition(jv: JsonValue) -> Result<Condition, EvalError>
         let values = match in_jv.as_array()
             Some(arr) -> arr
             None      -> return Err(BadPolicy("'in' must be an array"))
-        return Ok(PathIn(PathList { path: path, values: values }))
+        return Ok(PathIn(path, values))
     if obj.contains_key("contains")
         let value = match obj.get("contains")
             Some(v) -> v
             None    -> return Err(BadPolicy("'contains' value missing"))
-        return Ok(PathContains(PathTest { path: path, value: value }))
+        return Ok(PathContains(path, value))
     if obj.contains_key("exists")
         let expected = get_bool(obj, "exists")
-        return Ok(PathExists(PathExist { path: path, expected: expected }))
+        return Ok(PathExists(path, expected))
 
     return Err(BadPolicy("condition at path '${path}' has no recognised operator"))
 

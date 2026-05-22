@@ -145,6 +145,21 @@ Options:
                              (default: High)
 ```
 
+### Wasm backend
+
+The same source builds under Capa's WebAssembly backend:
+
+```bash
+capa --wasm --run policy_eval.capa -- data/subject.json
+```
+
+The pipeline compiles end-to-end and produces both report
+files. The rule-evaluation output diverges from the Python
+path on this demo dataset (the Wasm `JsonValue` path-navigation
+returns 0 findings where the Python path reports 7); the
+Python build remains the reference until that gap closes.
+Tracked under the Capa Phase 6 backend roadmap.
+
 ## The audit story
 
 `capa --manifest policy_eval.capa` shows the capability shape

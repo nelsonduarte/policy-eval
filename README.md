@@ -158,6 +158,18 @@ capa --wasm --run policy_eval.capa -- data/subject.json
 Both reports (`policy-report-*.md` and `policy-report-*.json`)
 are byte-identical across backends.
 
+The same source also builds as a Component Model `.wasm`
+artifact with the canonical-ABI lowering for every imported
+capability method (`Stdio`, `Fs`, `Env`, `Json`):
+
+```bash
+capa --wasm --component --output policy_eval.wasm policy_eval.capa
+```
+
+The resulting `.wasm` is consumable by any Component-Model-
+aware runtime (`wasmtime serve`, jco, ...) and ships the WIT
+spec embedded in the binary.
+
 ## The audit story
 
 `capa --manifest policy_eval.capa` shows the capability shape

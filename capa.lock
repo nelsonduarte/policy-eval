@@ -4,23 +4,23 @@
 [[dependencies]]
 name = "capa_cli"
 git = "https://github.com/nelsonduarte/capa_cli"
-pin = "v0.1.1"
+pin = "v0.1.2"
 pin_kind = "tag"
-commit = "c4bfffe7d244de51b2b76626ce9c4db590e313dd"
+commit = "85137399c9906b31c69eda1777c25661cb2f4349"
 signing_key = "6C1D222D491FB88031E041A536CFB426101AA24B"
 
 [[dependencies]]
 name = "capa_datetime"
 git = "https://github.com/nelsonduarte/capa_datetime"
-pin = "v0.1.1"
+pin = "v0.1.2"
 pin_kind = "tag"
-commit = "968613c101a613efaa21b845653509813bf23a16"
+commit = "34a373dab297a6afc6911d31cd8ba0a65b7de4ba"
 signing_key = "6C1D222D491FB88031E041A536CFB426101AA24B"
 
 [[dependencies]]
 name = "capa_log"
 git = "https://github.com/nelsonduarte/capa_log"
-pin = "v0.1.1"
+pin = "v0.1.2"
 pin_kind = "tag"
-commit = "fc121de7dc0b133c2780c538a3b71db336388ac4"
+commit = "788e7ada58b9382b4f5149b8fd81c1497d6eaa3e"
 signing_key = "6C1D222D491FB88031E041A536CFB426101AA24B"

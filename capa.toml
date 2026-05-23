@@ -10,15 +10,15 @@ capa = ">=0.8.4"
 
 [dependencies.capa_cli]
 git = "https://github.com/nelsonduarte/capa_cli"
-tag = "v0.1.1"
+tag = "v0.1.2"
 verify_key = "6C1D222D491FB88031E041A536CFB426101AA24B"
 
 [dependencies.capa_datetime]
 git = "https://github.com/nelsonduarte/capa_datetime"
-tag = "v0.1.1"
+tag = "v0.1.2"
 verify_key = "6C1D222D491FB88031E041A536CFB426101AA24B"
 
 [dependencies.capa_log]
 git = "https://github.com/nelsonduarte/capa_log"
-tag = "v0.1.1"
+tag = "v0.1.2"
 verify_key = "6C1D222D491FB88031E041A536CFB426101AA24B"

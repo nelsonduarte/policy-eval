@@ -160,7 +160,7 @@ are byte-identical across backends.
 
 The same source also builds as a Component Model `.wasm`
 artifact with the canonical-ABI lowering for every imported
-capability method (`Stdio`, `Fs`, `Env`, `Json`):
+capability method (`Stdio`, `Fs`, `Env`):
 
 ```bash
 capa --wasm --component --output policy_eval.wasm policy_eval.capa
@@ -169,6 +169,18 @@ capa --wasm --component --output policy_eval.wasm policy_eval.capa
 The resulting `.wasm` is consumable by any Component-Model-
 aware runtime (`wasmtime serve`, jco, ...) and ships the WIT
 spec embedded in the binary.
+
+And the artifact runs end-to-end under an external Component
+Model runtime via `capa --wasm --component --run`, with the
+exact same findings as the Python reference path. JSON is
+parsed entirely inside the guest module (Capa-source parser
+bundled into the artifact), so no `capa:host/json` import is
+emitted and the guest's linear memory holds the JsonValue
+tree without a host-side memory bridge:
+
+```bash
+capa --wasm --component --run policy_eval.capa -- data/subject.json
+```
 
 ## The audit story
 
